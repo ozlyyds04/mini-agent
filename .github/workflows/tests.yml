@@ -1,0 +1,63 @@
+name: tests
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  unittest:
+    name: unittest (py${{ matrix.python-version }} / ${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python-version: ["3.11", "3.12"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Show that there are no third-party dependencies
+        run: python -c "import pathlib,sys; p=pathlib.Path('pyproject.toml').read_text(encoding='utf-8'); assert 'dependencies = []' in p; print('zero dependencies OK')"
+
+      - name: Run offline test suite (no API key, no network)
+        env:
+          LLM_API_KEY: ""
+        run: python -m unittest discover -s tests -t . -v
+
+      - name: Smoke-test the CLI wiring (no network; expects config error exit code)
+        run: |
+          python -m agent --list-sessions
+        continue-on-error: false
+
+  lint-imports:
+    name: import sanity (no network)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Import every module
+        run: |
+          python - <<'PY'
+          import importlib
+          modules = [
+              "agent", "agent.config", "agent.errors",
+              "agent.llm.types", "agent.llm.parser", "agent.llm.adapters", "agent.llm.client",
+              "agent.tools.base", "agent.tools.registry",
+              "agent.session.models", "agent.session.store",
+              "agent.context.budget", "agent.context.builder", "agent.context.compressor",
+              "agent.runtime.events", "agent.runtime.executor", "agent.runtime.async_tools",
+              "agent.runtime.loop", "agent.trace.tracer", "agent.cli",
+          ]
+          for name in modules:
+              importlib.import_module(name)
+              print("ok", name)
+          PY

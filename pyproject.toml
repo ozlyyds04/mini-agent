@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mini-agent"
+version = "1.0.0"
+description = "从零实现的最小可用 Agent：工具注册、会话隔离、context 压缩、异步工具、trace（零第三方依赖）"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+dependencies = []
+
+[project.scripts]
+mini-agent = "agent.cli:main"
+
+[tool.setuptools]
+packages = ["agent", "agent.llm", "agent.runtime", "agent.tools", "agent.session", "agent.context", "agent.trace", "agent.memory"]

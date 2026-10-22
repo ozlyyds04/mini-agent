@@ -1,0 +1,27 @@
+# ---- 密钥与本地配置 ----
+.env
+.env.local
+
+# ---- 运行时产物 ----
+sessions/
+traces/
+artifacts/
+*.jsonl
+
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# ---- 编辑器 ----
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
