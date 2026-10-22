@@ -51,7 +51,9 @@ def todo(
             return ToolResult.failure("add 操作需要提供 content，例如 content='买牛奶'。")
         item = session.add_todo(text)
         item_id = getattr(item, "id", "?")
-        return ToolResult.success(f"已添加待办 #{item_id}：{text}\n{_render_todos(session)}")
+        # 只回确认，不回整张清单：把清单和"新增成功"一起回喂，模型容易误判为
+        # "已经存在同名待办"。需要清单时它会自己调 action=list。
+        return ToolResult.success(f"已添加待办 #{item_id}：{text}")
 
     if action == "list":
         return ToolResult.success(_render_todos(session))
@@ -62,7 +64,7 @@ def todo(
         item = session.done_todo(id)
         if item is None:
             return ToolResult.failure(f"没有找到编号 #{id} 的待办；先用 action=list 查看现有编号。")
-        return ToolResult.success(f"已完成待办 #{id}：{item.content}\n{_render_todos(session)}")
+        return ToolResult.success(f"已完成待办 #{id}：{item.content}")
 
     if action == "clear":
         removed = session.clear_todos()

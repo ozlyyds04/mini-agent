@@ -11,7 +11,7 @@
 | 第三方依赖 | **0**（`urllib` + `json` + `threading` + `unittest`） |
 | 代码量 | 实现 ~4.3k 行，测试 ~2k 行 |
 | 测试 | **140 个用例，全部离线**（不需要 API key / 不联网） |
-| 模型 | **DeepSeek**（`deepseek-chat` / `deepseek-reasoner`，`.env` 一行切换） |
+| 模型 | **DeepSeek**（模型 ID 因账号而异，用 `scripts/list_models.py` 查；本机实测为 `deepseek-flash` / `deepseek-v4-pro`） |
 
 ---
 
@@ -19,7 +19,8 @@
 
 ```bash
 # 1) 配置模型（唯一需要手动做的一步）
-cp .env.example .env          # 填入 LLM_API_KEY（默认 DeepSeek）
+cp .env.example .env          # 填入 LLM_API_KEY
+python scripts/list_models.py # 确认这个 key 能用哪些模型，写进 LLM_MODEL
 
 # 2) 启动交互式 Agent
 python -m agent
@@ -395,7 +396,7 @@ CI：[`.github/workflows/tests.yml`](.github/workflows/tests.yml)（Ubuntu + Win
 | 项 | 值 |
 |---|---|
 | base_url | `https://api.deepseek.com/v1`（可用 `LLM_BASE_URL` 覆盖为网关） |
-| 模型 | `deepseek-chat`（默认）/ `deepseek-reasoner` |
+| 模型 | **因账号/网关而异**：官方文档是 `deepseek-chat` / `deepseek-reasoner`，本机 key 实测只有 `deepseek-flash` / `deepseek-v4-pro` |
 | key | `LLM_API_KEY` 或 `DEEPSEEK_API_KEY`，二选一 |
 | thinking 回填 | ❌ 不回复 `reasoning_content`（DeepSeek 推理模型不接受） |
 | tool_choice | 只发 `auto`（不依赖 required/strict） |
@@ -403,8 +404,17 @@ CI：[`.github/workflows/tests.yml`](.github/workflows/tests.yml)（Ubuntu + Win
 ```bash
 # .env
 LLM_API_KEY=sk-xxxxxxxx
-LLM_MODEL=deepseek-chat
+LLM_MODEL=deepseek-flash      # 用 scripts/list_models.py 确认
 ```
+
+### 故障排查
+
+| 现象 | 原因 | 处理 |
+|---|---|---|
+| `400 Model Not Exist` | `LLM_MODEL` 不是该 key 支持的 ID | `python scripts/list_models.py` 看可用列表；错误信息里也会直接提示这一步 |
+| `401 Authentication Fails` | key 错误或过期 | 检查 `.env` 的 `LLM_API_KEY`（注意不要留空格/引号） |
+| 启动就报"缺少 API key" | `.env` 没被读到 | 确认文件在仓库根目录且名为 `.env`；也支持 `DEEPSEEK_API_KEY` |
+| 检测到 `LLM_PROVIDER=xxx` 报错 | 旧配置残留 | 删掉该变量或设为 `deepseek` |
 
 设计上仍然保留了一个**薄的 `ModelProfile` 能力画像**（`agent/config.py`）：它有且只有 DeepSeek 一个实例，作用是让 builder/client 问"能不能回填思考"，而不是把厂商判断散落在业务代码里。如果以后要接第二家模型，扩展点是继承 `Adapter`，主循环不用改。
 

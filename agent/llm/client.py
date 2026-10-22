@@ -133,6 +133,12 @@ class LLMClient:
                 detail = exc.read().decode("utf-8", "replace")
             except Exception:  # noqa: BLE001
                 pass
+            # 模型名不被该账号/网关支持是最常见的 400，给出可直接执行的下一步
+            if exc.code in (400, 404) and "model" in detail.lower():
+                detail += (
+                    f"\n提示：当前 LLM_MODEL={self.config.model!r} 可能不被该 key 支持。"
+                    "运行 `python scripts/list_models.py` 查看可用模型，再改 .env 的 LLM_MODEL。"
+                )
             raise LLMHTTPError(exc.code, detail) from exc
         except urllib.error.URLError as exc:
             raise LLMError(f"network error: {exc.reason}") from exc
@@ -176,6 +182,12 @@ class LLMClient:
                 detail = exc.read().decode("utf-8", "replace")
             except Exception:  # noqa: BLE001
                 pass
+            # 模型名不被该账号/网关支持是最常见的 400，给出可直接执行的下一步
+            if exc.code in (400, 404) and "model" in detail.lower():
+                detail += (
+                    f"\n提示：当前 LLM_MODEL={self.config.model!r} 可能不被该 key 支持。"
+                    "运行 `python scripts/list_models.py` 查看可用模型，再改 .env 的 LLM_MODEL。"
+                )
             raise LLMHTTPError(exc.code, detail) from exc
         except urllib.error.URLError as exc:
             raise LLMError(f"network error: {exc.reason}") from exc
