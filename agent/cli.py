@@ -347,8 +347,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--no-stream", action="store_true", help="关闭流式输出")
     parser.add_argument("--hide-thinking", action="store_true", help="不展示模型思考过程")
     parser.add_argument("--trace", action="store_true", help="每轮结束后打印 trace 汇总")
-    parser.add_argument("--provider", help="覆盖 LLM_PROVIDER")
-    parser.add_argument("--model", help="覆盖 LLM_MODEL")
+    parser.add_argument("--model", help="覆盖 LLM_MODEL（默认 deepseek-chat）")
     parser.add_argument("--data-dir", help="会话/产物/trace 的存放目录")
     parser.add_argument("--version", action="version", version="mini-agent 1.0.0")
     return parser
@@ -364,9 +363,6 @@ def main(argv: list[str] | None = None) -> int:
         print(Style.red(str(exc)), file=sys.stderr)
         return 2
 
-    if args.provider:
-        config.provider = args.provider.lower()
-        config._profile = None  # 重新解析 provider 画像
     if args.model:
         config.model = args.model
     if args.data_dir:

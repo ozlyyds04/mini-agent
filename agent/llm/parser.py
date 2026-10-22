@@ -1,17 +1,15 @@
 """LLM 输出的归一化解析。
 
-这是"多厂商兼容"的核心：同一份 OpenAI-compatible 协议，各家实际输出差异很大。
-本模块负责把差异全部吸收掉，让上层循环只面对 :class:`LLMResponse`。
+把 DeepSeek 的原始响应翻译成内部统一的 :class:`LLMResponse`，同时吸收掉
+真实调用里会遇到的脏数据。上层循环只面对归一化结果，不需要知道协议长什么样。
 
-处理的真实差异（均已按官方文档核对）
-------------------------------------
-1. 思考过程字段名不同：``reasoning_content``（DeepSeek / GLM / 豆包）、
-   ``reasoning``、``thinking``；Anthropic 系是 content block 里的 ``thinking``。
-2. ``content`` 可能是字符串，也可能是 block 数组（部分厂商/网关会包一层）。
+处理的真实差异与脏数据
+----------------------
+1. 思考过程在 ``reasoning_content``（DeepSeek 的推理模型会返回）。
+2. ``content`` 可能是字符串，也可能是 block 数组（网关偶尔会包一层）。
 3. 流式 ``tool_calls`` 按 ``index`` 分片：首片带 id/name，后续只带 arguments 片段，
    必须拼完才能 parse，中途 parse 必然失败。
-4. 弱 function calling 的模型会把工具调用**写进 content**（```json 围栏或裸 JSON），
-   需要兜底抽取。
+4. 模型偶尔把工具调用**写进 content**（```json 围栏或裸 JSON），需要兜底抽取。
 5. ``arguments`` 可能是截断/单引号/尾逗号的脏 JSON。
 """
 

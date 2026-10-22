@@ -120,8 +120,8 @@ class Message:
 
     role: str
     content: str = ""
-    #: Agent 的思考过程（DeepSeek reasoning_content / GLM reasoning_content）。
-    #: 是否回填给下一轮由 ProviderProfile.backfill_thinking 决定。
+    #: Agent 的思考过程（DeepSeek 的 reasoning_content / thinking）。
+    #: 是否回填给下一轮由 ModelProfile.backfill_thinking 决定（DeepSeek 不回填）。
     thinking: str = ""
     tool_calls: list[ToolCall] = field(default_factory=list)
     #: role == "tool" 时必填，必须与 request 中的 tool_call.id 严格配对。

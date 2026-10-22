@@ -3,9 +3,10 @@
 设计取舍
 --------
 1. 不引入 pydantic / python-dotenv —— 零第三方依赖是这个项目的卖点之一。
-2. 各厂商在"同一个 OpenAI-compatible 协议"下的真实差异，收敛进
-   ``ProviderProfile``，上层只做能力探测，不写 ``if provider == "glm"`` 散落各处。
-3. 所有阈值（压缩水位、max_steps、tool 结果截断）都可配，方便面试时现场演示。
+2. **只对接 DeepSeek**。能力差异（思考过程是否回填、tool_choice、strict schema）
+   不散落在业务代码里，而是收敛成一个 :data:`DEEPSEEK` 画像常量：
+   上层只问"能不能"，不写 ``if 厂商``。
+3. 所有阈值（压缩水位、max_steps、tool 结果截断）都可配，方便现场演示。
 """
 
 from __future__ import annotations
@@ -18,59 +19,30 @@ from .errors import ConfigError
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
+#: 当前唯一支持的厂商。保留常量是为了让"能力画像"这个概念有落点，
+#: 而不是把厂商差异硬编码进 builder / client。
+PROVIDER_NAME = "deepseek"
 
-# ---------------------------------------------------------------- Provider
+
+# ---------------------------------------------------------------- 模型画像
 @dataclass(frozen=True)
-class ProviderProfile:
-    """一个 provider 的能力画像（由官方文档/实测确认，见 docs/system-design.md「Provider 差异」）。"""
+class ModelProfile:
+    """DeepSeek 的能力画像（依据官方文档 + 实测）。"""
 
     name: str
     base_url: str
     default_model: str
-    #: 是否把上一轮的 thinking / reasoning_content 原样回填给下一轮请求。
-    #: 注意各家的要求是**相反**的：GLM 交错思考要求回传，DeepSeek 推理模型不接受回传。
+    #: 是否把上一轮的 reasoning_content 回填给下一轮请求。
+    #: DeepSeek 的推理模型**不接受**回填（会报错），所以固定为 False。
     backfill_thinking: bool = False
-    #: 是否支持一次返回多个 tool_call（并行工具调用）。
-    supports_parallel_tool_calls: bool = True
-    #: tool_choice 是否支持 required / 指定函数（GLM 只支持 auto）。
-    supports_tool_choice: bool = True
-    #: 是否支持 strict JSON Schema 约束（多数国内厂商不支持）。
-    supports_strict_schema: bool = False
 
 
-PROVIDERS: dict[str, ProviderProfile] = {
-    "deepseek": ProviderProfile(
-        name="deepseek",
-        base_url="https://api.deepseek.com/v1",
-        default_model="deepseek-chat",
-        backfill_thinking=False,
-    ),
-    "glm": ProviderProfile(
-        name="glm",
-        base_url="https://open.bigmodel.cn/api/paas/v4",
-        default_model="glm-4-flash",
-        # 交错思考（thinking + tool_calls 混合）时必须把 reasoning_content 原样回传，
-        # 且 clear_thinking=false 才保留历史思考。
-        backfill_thinking=True,
-        supports_tool_choice=False,
-    ),
-    "openai": ProviderProfile(
-        name="openai",
-        base_url="https://api.openai.com/v1",
-        default_model="gpt-4o-mini",
-        supports_strict_schema=True,
-    ),
-    "qwen": ProviderProfile(
-        name="qwen",
-        base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
-        default_model="qwen-plus",
-    ),
-    "ark": ProviderProfile(
-        name="ark",
-        base_url="https://ark.cn-beijing.volces.com/api/v3",
-        default_model="doubao-seed-1-6-250615",
-    ),
-}
+DEEPSEEK = ModelProfile(
+    name=PROVIDER_NAME,
+    base_url="https://api.deepseek.com/v1",
+    default_model="deepseek-chat",
+    backfill_thinking=False,
+)
 
 
 def _load_env_file(path: Path) -> None:
@@ -79,7 +51,7 @@ def _load_env_file(path: Path) -> None:
         return
     try:
         raw = path.read_text(encoding="utf-8")
-    except OSError:
+    except (OSError, UnicodeDecodeError):
         return
     for line in raw.splitlines():
         line = line.strip()
@@ -87,8 +59,13 @@ def _load_env_file(path: Path) -> None:
             continue
         key, _, value = line.partition("=")
         key = key.strip()
+        if not key or not key.replace("_", "").isalnum():
+            continue
         value = value.strip().strip('"').strip("'")
-        if key and key not in os.environ:
+        # 支持 ${OTHER_VAR} 引用与已存在的环境变量优先
+        if value.startswith("${") and value.endswith("}"):
+            value = os.environ.get(value[2:-1], "")
+        if key not in os.environ:
             os.environ[key] = value
 
 
@@ -121,10 +98,11 @@ def _env_bool(name: str, default: bool) -> bool:
 class Config:
     """运行期配置。用 :func:`Config.from_env` 构造，测试里直接构造即可。"""
 
-    provider: str = "deepseek"
-    base_url: str = ""
+    #: 仅用于展示与追踪；DeepSeek 之外的值会被拒绝（见 from_env）
+    provider: str = PROVIDER_NAME
+    base_url: str = DEEPSEEK.base_url
     api_key: str = ""
-    model: str = ""
+    model: str = DEEPSEEK.default_model
     temperature: float = 0.3
     max_tokens: int = 2048
     stream: bool = True
@@ -158,9 +136,6 @@ class Config:
     #: 是否启用"按需记忆召回"（只在出现指代/时间词时才翻历史）
     enable_memory_recall: bool = True
 
-    # 派生字段（from_env 填充）
-    _profile: ProviderProfile | None = None
-
     # -- 目录 ---------------------------------------------------------
     @property
     def sessions_dir(self) -> Path:
@@ -174,36 +149,36 @@ class Config:
     def traces_dir(self) -> Path:
         return self.data_dir / "traces"
 
-    # -- provider -----------------------------------------------------
+    # -- 模型能力 -----------------------------------------------------
     @property
-    def profile(self) -> ProviderProfile:
-        if self._profile is not None:
-            return self._profile
-        profile = PROVIDERS.get(self.provider)
-        if profile is None:
-            raise ConfigError(
-                f"unknown LLM_PROVIDER={self.provider!r}; "
-                f"choose from {', '.join(sorted(PROVIDERS))}"
-            )
-        return profile
+    def profile(self) -> ModelProfile:
+        return DEEPSEEK
 
     # -- 构造 ---------------------------------------------------------
     @classmethod
     def from_env(cls, env_file: Path | None = None, require_api_key: bool = True) -> "Config":
         _load_env_file(env_file if env_file is not None else REPO_ROOT / ".env")
 
-        provider = _env_str("LLM_PROVIDER", "deepseek").lower()
-        if provider not in PROVIDERS:
+        # 只接受 deepseek（留出 LLM_PROVIDER 是为了让旧配置报出清晰错误，
+        # 而不是静默连到错误的地址）
+        provider = _env_str("LLM_PROVIDER", PROVIDER_NAME).lower() or PROVIDER_NAME
+        if provider != PROVIDER_NAME:
             raise ConfigError(
-                f"unknown LLM_PROVIDER={provider!r}; choose from {', '.join(sorted(PROVIDERS))}"
+                f"本项目只支持 DeepSeek，但检测到 LLM_PROVIDER={provider!r}。"
+                f"请删除该变量或设为 {PROVIDER_NAME!r}。"
             )
-        profile = PROVIDERS[provider]
+
+        # 兼容两种 key 变量名：LLM_API_KEY / DEEPSEEK_API_KEY
+        api_key = _env_str("LLM_API_KEY") or _env_str("DEEPSEEK_API_KEY")
+        base_url = (
+            _env_str("LLM_BASE_URL") or _env_str("DEEPSEEK_BASE_URL") or DEEPSEEK.base_url
+        ).rstrip("/")
 
         cfg = cls(
-            provider=provider,
-            base_url=_env_str("LLM_BASE_URL", profile.base_url).rstrip("/"),
-            api_key=_env_str("LLM_API_KEY"),
-            model=_env_str("LLM_MODEL", profile.default_model),
+            provider=PROVIDER_NAME,
+            base_url=base_url,
+            api_key=api_key,
+            model=_env_str("LLM_MODEL", DEEPSEEK.default_model),
             temperature=_env_float("LLM_TEMPERATURE", 0.3),
             max_tokens=_env_int("LLM_MAX_TOKENS", 2048),
             stream=_env_bool("LLM_STREAM", True),
@@ -220,17 +195,16 @@ class Config:
             enable_memory_recall=_env_bool("MINI_AGENT_MEMORY_RECALL", True),
             data_dir=Path(_env_str("MINI_AGENT_DATA_DIR", str(REPO_ROOT))),
         )
-        cfg._profile = profile
 
         if require_api_key and not cfg.api_key:
             raise ConfigError(
-                "缺少 LLM_API_KEY。复制 .env.example 为 .env 并填入 key；"
+                "缺少 API key。复制 .env.example 为 .env，填入 LLM_API_KEY（或 DEEPSEEK_API_KEY）；"
                 "离线测试不需要 key（python -m unittest discover -s tests -t .）。"
             )
         return cfg
 
     def apply_overrides(self, **kwargs: object) -> "Config":
-        """测试/CLI 用的轻量覆盖（只接受已知字段）。"""
+        """测试 / CLI 用的轻量覆盖（只接受已知字段）。"""
         known = {f.name for f in fields(self)}
         for key, value in kwargs.items():
             if key not in known:

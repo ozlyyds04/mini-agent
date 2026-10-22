@@ -1,4 +1,4 @@
-# AI Prompt 与问题解决记录
+﻿# AI Prompt 与问题解决记录
 
 > 题目要求提交"AI Prompt 与问题解决记录"。这份记录按**问题 → 我给 AI 的 Prompt → AI 产出 → 我的判断与改动**写，尽量保留真实的失败与返工，而不是只写成功路径。
 
@@ -31,7 +31,7 @@
 **问题**：架构题要讲"Claude Code vs OpenAI-compatible function calling"和"Agent memory 框架"，凭印象写很容易错，面试官一问就露馅。
 
 **Prompt 要点**（两份并行任务）
-> 做事实核查型调研，区分「确认到的事实（附官方文档/GitHub 链接）」与「你的工程判断」，不要编造 API 细节。重点：① Anthropic tool_use/tool_result 的 block 结构与回填规则；② GLM 流式 tool_calls 分片与 reasoning_content 回填要求；③ OpenHands 实际的状态枚举与 EventStream 模型。
+> 做事实核查型调研，区分「确认到的事实（附官方文档/GitHub 链接）」与「你的工程判断」，不要编造 API 细节。重点：① DeepSeek/OpenAI-compatible 的 tool_calls 结构、流式分片与 reasoning_content 回填规则；② Anthropic tool_use/tool_result 的 block 结构（架构题对比用）；③ OpenHands 实际的状态枚举与 EventStream 模型。
 
 **AI 产出**：两份带出处的事实清单。
 
@@ -39,10 +39,10 @@
 
 | 我原本以为 | 事实 | 影响 |
 |---|---|---|
-| 思考过程默认不回填 | **各家要求相反**：GLM 交错思考 + 工具调用时必须把 `reasoning_content` 原样回传；部分推理模型不接受回填 | 回填做成 `ProviderProfile.backfill_thinking` 配置项，而不是写死 |
+| 思考过程默认不回填 | DeepSeek 的推理模型**不接受**把 `reasoning_content` 放回请求；而有些厂商（如 GLM 交错思考）反而要求原样回传 | 本项目只对接 DeepSeek，所以固定 `ModelProfile.backfill_thinking=False`；"各家要求相反"这个结论写进架构题答案，不作为本项目的实现负担 |
 | OpenHands 有 `AGENT_RUNNING` 状态 | 实际 12 个状态里**没有** `AGENT_RUNNING`；`EventStream` 是 append-only 多写者总线，不是严格单向流 | 架构题答案改写；代码里的 `state` 取值也只用 `idle/busy/waiting_tool/paused` |
 
-**结果**：`config.py` 的 `ProviderProfile` 注释直接引用这些结论；架构题第五篇的对比表也来自这里。
+**结果**：`config.py` 的 `ModelProfile` 注释直接引用这些结论；架构题第五篇的对比表也来自这里。项目最终按需求收窄为只支持 DeepSeek，多厂商调研成果保留在架构题答案里。
 
 ---
 

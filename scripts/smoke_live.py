@@ -1,9 +1,9 @@
 """真实 LLM 联调冒烟：验证协议、流式、工具调用、session 全链路。
 
-需要 `.env` 中的 LLM_API_KEY。CI 不跑它（默认离线），本地联调用：
+需要 `.env` 中的 DeepSeek key。CI 不跑它（默认离线），本地联调用：
 
     python scripts/smoke_live.py
-    python scripts/smoke_live.py --provider glm --model glm-4-flash
+    python scripts/smoke_live.py --model deepseek-reasoner
 """
 
 from __future__ import annotations
@@ -28,15 +28,11 @@ from agent.trace.tracer import Tracer                              # noqa: E402
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--provider")
     parser.add_argument("--model")
     parser.add_argument("--data-dir", default=None)
     args = parser.parse_args()
 
     config = Config.from_env()
-    if args.provider:
-        config.provider = args.provider.lower()
-        config._profile = None
     if args.model:
         config.model = args.model
     if args.data_dir:
@@ -44,7 +40,7 @@ def main() -> int:
     config.stream = True
 
     print("=" * 68)
-    print(f"真实 LLM 冒烟：provider={config.provider} model={config.model} stream=on")
+    print(f"真实 LLM 冒烟：provider=deepseek model={config.model} stream=on")
     print("=" * 68)
 
     tracer = Tracer(trace_dir=config.traces_dir)

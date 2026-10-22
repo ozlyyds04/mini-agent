@@ -11,7 +11,7 @@
 | 第三方依赖 | **0**（`urllib` + `json` + `threading` + `unittest`） |
 | 代码量 | 实现 ~4.3k 行，测试 ~2k 行 |
 | 测试 | **140 个用例，全部离线**（不需要 API key / 不联网） |
-| 模型 | 任意 OpenAI-compatible：DeepSeek / GLM / Qwen / OpenAI / 豆包（`.env` 改三行切换） |
+| 模型 | **DeepSeek**（`deepseek-chat` / `deepseek-reasoner`，`.env` 一行切换） |
 
 ---
 
@@ -168,15 +168,15 @@ session.append(Message.tool_result(call.id, result.to_observation()))
 
 模型下一轮通常能自己改对（测试 `test_loop.py::test_unknown_tool_then_self_heal` 覆盖）。直接抛异常会让一次小失误废掉整轮对话——这是 Agent 和普通服务最大的差别之一。
 
-### 4.4 多厂商输出解析（真实差异，已按官方文档核对）
+### 4.4 输出解析与容错（按 DeepSeek 的真实行为实现）
 
-| 差异 | 处理 |
+| 情况 | 处理 |
 |---|---|
-| 思考过程字段：`reasoning_content` / `reasoning` / `thinking` / block 数组 | 统一提取；回填与否由 `ProviderProfile.backfill_thinking` 决定（**GLM 交错思考要求原样回传，部分推理模型禁止回填，二者相反**，所以做成配置而不是写死） |
+| 思考过程在 `reasoning_content` | 单独存 `thinking`；**回填与否固定为不回填**（DeepSeek 推理模型不接受把 reasoning_content 放回请求），由 `ModelProfile.backfill_thinking=False` 统一控制 |
 | 流式 `tool_calls` 分片：`index` 分组，首片带 id/name，后续只带 `arguments` 片段 | `StreamAccumulator` 按 index 累积，**收完才 parse**（中途必然 JSON 错） |
 | `arguments` 是脏 JSON（截断 / 围栏 / 单引号 / 尾逗号） | 三级修复：`json.loads` → 去围栏 → 补引号去尾逗号；仍失败则留 `raw_arguments` 并回喂错误 |
-| 弱 function calling 模型把调用写进 `content` | 兜底抽取 ```json 围栏 / 裸 JSON / `<tool>` |
-| `tool_choice` / `strict` 能力不一（GLM 只支持 `auto`，且无 strict） | 只做能力探测 + 保守用法，参数校验自己兜 |
+| 模型把工具调用写进 `content` | 兜底抽取 ```json 围栏 / 裸 JSON / `<tool>` |
+| `content` 是 block 数组 / 为 null（只调工具时） | 统一归一化成字符串 |
 
 > 详见 [`agent/llm/parser.py`](agent/llm/parser.py)、[`agent/llm/adapters.py`](agent/llm/adapters.py)。
 
@@ -390,17 +390,23 @@ CI：[`.github/workflows/tests.yml`](.github/workflows/tests.yml)（Ubuntu + Win
 
 ---
 
-## 12. Provider 兼容
+## 12. 模型配置（只对接 DeepSeek）
 
-| Provider | base_url | 默认模型 | thinking 回填 | tool_choice | strict |
-|---|---|---|---|---|---|
-| deepseek | `api.deepseek.com/v1` | `deepseek-chat` | ❌ | ✅ | ❌ |
-| glm | `open.bigmodel.cn/api/paas/v4` | `glm-4-flash` | **✅ 必须回传** | 仅 `auto` | ❌ |
-| qwen | `dashscope.aliyuncs.com/compatible-mode/v1` | `qwen-plus` | ❌ | ✅ | ❌ |
-| openai | `api.openai.com/v1` | `gpt-4o-mini` | ❌ | ✅ | ✅ |
-| ark（豆包） | `ark.cn-beijing.volces.com/api/v3` | `doubao-seed-1-6-250615` | ❌ | ✅ | ❌ |
+| 项 | 值 |
+|---|---|
+| base_url | `https://api.deepseek.com/v1`（可用 `LLM_BASE_URL` 覆盖为网关） |
+| 模型 | `deepseek-chat`（默认）/ `deepseek-reasoner` |
+| key | `LLM_API_KEY` 或 `DEEPSEEK_API_KEY`，二选一 |
+| thinking 回填 | ❌ 不回复 `reasoning_content`（DeepSeek 推理模型不接受） |
+| tool_choice | 只发 `auto`（不依赖 required/strict） |
 
-切换只改 `.env` 的 `LLM_PROVIDER` / `LLM_MODEL`；`ProviderProfile` 承载能力差异，上层代码里没有 `if provider == "glm"`。
+```bash
+# .env
+LLM_API_KEY=sk-xxxxxxxx
+LLM_MODEL=deepseek-chat
+```
+
+设计上仍然保留了一个**薄的 `ModelProfile` 能力画像**（`agent/config.py`）：它有且只有 DeepSeek 一个实例，作用是让 builder/client 问"能不能回填思考"，而不是把厂商判断散落在业务代码里。如果以后要接第二家模型，扩展点是继承 `Adapter`，主循环不用改。
 
 ---
 
@@ -429,7 +435,7 @@ CI：[`.github/workflows/tests.yml`](.github/workflows/tests.yml)（Ubuntu + Win
 mini-agent/
 ├── agent/
 │   ├── cli.py            # 交互式 CLI：多窗口、流式、命令
-│   ├── config.py         # 环境变量配置 + ProviderProfile 能力画像
+│   ├── config.py         # 环境变量配置 + ModelProfile 能力画像（单实例：DeepSeek）
 │   ├── errors.py         # 按可恢复性分层的异常体系
 │   ├── llm/              # types / parser(归一化+容错) / adapters / client(重试+流式)
 │   ├── runtime/          # loop(主循环) / executor / events / async_tools

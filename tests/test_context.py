@@ -90,20 +90,22 @@ class SystemPromptTest(ContextTestBase):
         built_extra = self.builder.build(session, extra_system="## 额外约束\n只回答中文")
         self.assertIn("只回答中文", built_extra[0]["content"])
 
-    def test_backfill_thinking_follows_provider_profile(self) -> None:
-        glm_config = Config(provider="glm", data_dir=self.root, context_budget_tokens=4000)
-        glm_builder = ContextBuilder(glm_config, self.store)
+    def test_thinking_is_not_backfilled_for_deepseek(self) -> None:
+        """DeepSeek 不接受 reasoning_content 回填，context 里不能出现该字段。"""
         session = self.store.create("thinking")
         self.store.append_message(session, Message.user("问题"))
         self.store.append_message(
             session, Message.assistant("回答", thinking="这是推理过程")
         )
-        # GLM 需要回填 reasoning_content
-        glm_built = glm_builder.build(session)
-        self.assertEqual(glm_built[-1].get("reasoning_content"), "这是推理过程")
-        # DeepSeek 不接受回填
-        ds_built = self.builder.build(session)
-        self.assertNotIn("reasoning_content", ds_built[-1])
+        built = self.builder.build(session)
+        self.assertNotIn("reasoning_content", built[-1])
+        # 但思考过程仍要落盘可查（session 里保留）
+        self.assertEqual(session.messages[-1].thinking, "这是推理过程")
+        # 显式要求时才回填（Message 层能力，配置层默认关闭）
+        self.assertEqual(
+            session.messages[-1].to_openai(backfill_thinking=True).get("reasoning_content"),
+            "这是推理过程",
+        )
 
 
 class ToolPairingTest(ContextTestBase):

@@ -1,4 +1,4 @@
-"""LLM 输出解析测试：覆盖真实世界里遇到过的各种畸形输出。"""
+﻿"""LLM 输出解析测试：覆盖真实世界里遇到过的各种畸形输出。"""
 
 from __future__ import annotations
 
@@ -89,7 +89,7 @@ class TestParseCompletion(unittest.TestCase):
         self.assertEqual(response.tool_calls[0].arguments, {"expression": "1+1"})
 
     def test_responses_with_error_payload(self) -> None:
-        # 正常响应里带 reasoning_content（DeepSeek-R1 / GLM 交错思考）
+        # 正常响应里带 reasoning_content（DeepSeek 推理模型）
         raw = {
             "choices": [
                 {
@@ -172,7 +172,7 @@ class TestStreamAccumulator(unittest.TestCase):
     def _chunks(self):
         """模拟一段真实的流式输出：文本 + 分片的工具调用参数。"""
         return [
-            {"model": "glm-4-flash", "choices": [{"delta": {"role": "assistant"}}]},
+            {"model": "deepseek-chat", "choices": [{"delta": {"role": "assistant"}}]},
             {"choices": [{"delta": {"content": "我"}}]},
             {"choices": [{"delta": {"content": "来算"}}]},
             {
