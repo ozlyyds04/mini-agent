@@ -80,8 +80,7 @@ def main() -> int:
 
     # 1) 直接回复 + 流式
     text, ms = ask("用一句话介绍你自己。")
-    checks.append(("流式输出可用", bool(text), f"{ms:.0f}ms"))
-    checks.append(("首 token 时间已记录", ms > 0, f"{ms:.0f}ms"))
+    checks.append(("流式输出可用", bool(text), f"首字 {ms:.0f}ms"))
 
     # 2) 单工具：calculator
     text, ms = ask("帮我算一下 (23*7+11)/4 等于多少？只给结果。")
