@@ -1,6 +1,5 @@
 # Memory：召回时机与放置方式
 
-> 题目要求在 README 中说明 memory 的召回时机与放置方式。本文是完整版。
 > 实现：[`agent/memory/recall.py`](../agent/memory/recall.py)；集成：[`agent/runtime/loop.py`](../agent/runtime/loop.py)。
 
 ## 1. 先定义问题：Agent 的"记忆"其实是四件事

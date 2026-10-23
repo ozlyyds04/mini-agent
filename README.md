@@ -5,14 +5,6 @@
 > **从零实现的最小可用 Agent Runtime**：工具注册、会话隔离、context 压缩、按需记忆召回、异步工具、全链路 trace。
 > **零第三方依赖**（只用 Python 标准库）。
 
-| | |
-|---|---|
-| 语言 / 运行时 | Python 3.11+（3.12 也已验证） |
-| 第三方依赖 | **0**（`urllib` + `json` + `threading` + `unittest`） |
-| 代码量 | 实现 ~4.3k 行，测试 ~2k 行 |
-| 测试 | **140 个用例，全部离线**（不需要 API key / 不联网） |
-| 模型 | **DeepSeek**（模型 ID 因账号而异，用 `scripts/list_models.py` 查；本机实测 `deepseek-flash` / `deepseek-v4-pro`） |
-| 真机验证 | ✅ 已用 DeepSeek 跑通流式 + 工具调用 + 多工具 + 会话恢复（6/6 项 PASS） |
 
 **目录**
 
@@ -22,9 +14,7 @@
 - [四、Memory 的召回时机与放置方式](#四memory-的召回时机与放置方式)
 - [五、AI Prompt 与问题解决记录](#五ai-prompt-与问题解决记录)
 - [六、测试与验证](#六测试与验证)
-- [七、模型配置与故障排查](#七模型配置与故障排查)
-- [八、对照题目要求](#八对照题目要求)
-- [九、文档索引](#九文档索引)
+- [七、文档索引](#七文档索引)
 
 ---
 
@@ -51,46 +41,6 @@ python -m agent
 python -m unittest discover -s tests -t . -v
 ```
 
-### 1.3 没有 key 也能看到效果
-
-两个 demo 自带离线模式（用可编程假 LLM 跑完整真实链路）：
-
-```bash
-python scripts/demo_two_windows.py   # 复现题面"用户 A 开两个独立窗口"
-python scripts/demo_async.py         # 异步工具：提交即返回，结果稍后注入
-```
-
-`demo_two_windows.py` 默认离线运行，末尾输出一组**结构断言**（不依赖模型表现，才是会话隔离的真证据）：
-
-```
-结构断言（这些才是『会话隔离』的真正证据，不依赖模型表现）
-  PASS  窗口1 的待办只包含自己的  (['明天带伞'])
-  PASS  窗口2 的待办只包含自己的  (['周五交周报'])
-  PASS  两个 session 的 id 不同
-  PASS  两个 session 的消息历史互相独立  (w1=9 条, w2=8 条)
-  PASS  窗口1 重新加载后待办仍在
-  PASS  窗口2 重新加载后待办仍在
-```
-
-### 1.4 有 key 时的联调
-
-```bash
-python scripts/smoke_live.py              # 6 项真机检查（流式/工具/多工具/会话恢复）
-python scripts/smoke_live.py --model deepseek-v4-pro
-```
-
-真机实测输出：
-
-```
-真实 LLM 冒烟：provider=deepseek model=deepseek-flash stream=on
-  PASS  流式输出可用            (604ms 首字)
-  PASS  工具调用：calculator    (12*12=144)
-  PASS  工具调用：todo add
-  PASS  带工具追问（读到会话状态）
-  PASS  一轮多工具
-  PASS  会话落盘可恢复
-联调通过 ✅
-```
 
 ### 1.5 CLI 命令与参数
 
@@ -115,19 +65,6 @@ python scripts/smoke_live.py --model deepseek-v4-pro
 | `--trace` | 每轮结束打印 trace 汇总 |
 | `--data-dir <path>` | 会话/产物/trace 的存放目录 |
 
-### 1.6 配置文件
-
-所有配置来自环境变量，也支持仓库根目录的 `.env`（已加入 `.gitignore`）。完整项见 [`.env.example`](.env.example)。
-
-```ini
-LLM_API_KEY=sk-xxxx            # 或 DEEPSEEK_API_KEY
-LLM_MODEL=deepseek-flash       # 用 scripts/list_models.py 确认
-LLM_STREAM=true
-MINI_AGENT_MAX_STEPS=8
-MINI_AGENT_CONTEXT_BUDGET=8000
-MINI_AGENT_ASYNC_TOOLS=true
-MINI_AGENT_MEMORY_RECALL=true
-```
 
 ---
 
@@ -385,7 +322,7 @@ session.append(Message.tool_result(call.id, result.to_observation()))
 | **L3** | > 92% | 不调 LLM：整轮硬裁剪到水位内 | 0 | ❌ |
 | 回退 | 摘要失败/超时/空 | `CompressionReport(ok=False)`，**不抛异常**，由 builder 硬预算兜底 | — | — |
 
-**压缩后如何保证仍然流畅**（题目原话的考点）：
+**压缩后如何保证仍然流畅**：
 
 - 摘要用**固定模板**：`【用户目标】【已完成动作与结论】【关键事实与ID】【未完成/待确认】【当前待办】`，避免自由发挥丢信息；
 - **pinned 事实**（`session.meta["pinned"]` + 第一条 user 消息）永不进摘要、永不被裁剪；
@@ -459,26 +396,11 @@ tracer.summary()
 #  'errors': [], 'llm_ms': 1832.4, 'tool_ms': 1.6}
 ```
 
-### 3.9 关键设计取舍
-
-| 决策 | 选择 | 理由（也是被追问时的答案） |
-|---|---|---|
-| 依赖 | 0 第三方 | "从零实现"是题目要求；也让面试官 clone 即跑，不赌 `pip install` |
-| HTTP | `urllib` 手写 SSE | 展示知道协议长什么样，而不是把 SDK 当黑盒 |
-| 并发 | 同步主循环 + 可插拔异步执行器 | 先保正确性与确定性；并行工具默认关闭（工具可能共享 session 状态） |
-| 存储 | JSONL 追加写 | 人可读、可 diff、可恢复、坏行可跳过；不引入 DB |
-| 压缩 | 分层 + 可降级 + 可逆 | 题目只要"基础压缩"，但"什么时候压、压谁、坏了怎么办"才是工程问题 |
-| 记忆召回 | 规则触发 + 关键词打分 | 接口可替换为向量检索；先保证"不该召回时绝不召回" |
-| 工具结果 | 截断 + 落盘 + 可回读 | 与 Claude Code 同源思路；比 API 层硬截更可恢复 |
-| 测试 | FakeLLM 离线全跑 | 不联网、无 key、不 flaky，CI 才有意义 |
-
-**明确没做的**（避免范围失控）：多 Agent 协作、真实向量库 RAG、Web UI、真实搜索 API（只留 `_backend()` 钩子）、分布式调度。题目说"复杂的压缩不用在这里实现"，所以压缩做到"分层 + 可回退"为止。
-
 ---
 
 ## 四、Memory 的召回时机与放置方式
 
-> 题面要求 README 必须说明这一项。实现见 [`agent/memory/recall.py`](agent/memory/recall.py)，集成见 `loop.py`；展开版见 [docs/memory.md](docs/memory.md)。
+> 实现见 [`agent/memory/recall.py`](agent/memory/recall.py)，集成见 `loop.py`；展开版见 [docs/memory.md](docs/memory.md)。
 
 ### 4.1 先分层：Agent 的"记忆"其实是四件事
 
@@ -565,7 +487,7 @@ candidates = messages[:cutoff]
 
 ## 五、AI Prompt 与问题解决记录
 
-> 题目要求提交"AI Prompt 与问题解决记录"。完整版（含每次 Prompt 原文要点）见 [docs/ai-prompts.md](docs/ai-prompts.md)，这里是摘要。
+> 完整版（含每次 Prompt 原文要点）见 [docs/ai-prompts.md](docs/ai-prompts.md)，这里是摘要。
 
 ### 5.1 我的使用原则
 
@@ -603,33 +525,7 @@ candidates = messages[:cutoff]
 | 4 | `max_steps` 测试报"内部错误" | `FakeLLM` 脚本只给了 1 条响应，但 `max_steps=2` 会调 2 次 | 补齐脚本；顺带确认最外层兜底确实生效 | 测试替身也要遵守"调用次数契约" |
 | 5 | 异步结果怎么回填？ | 第一版复用 `role="tool"` + 原 `tool_call_id` | 改成 `role="user"` + `[异步工具完成]` 前缀 | 同一条 assistant 的 tool_call_id 已被"已受理"占用，复用违反协议 |
 
-另外两个真机联调发现的问题（写完代码后跑真实 API 才暴露）：
 
-| 现象 | 根因 | 修复 |
-|---|---|---|
-| `.env` 里 `DeepSeek-V4.1-Flash-1017` 调不通 | 该模型 ID 不在这个 key 的可用列表里（实际只有 `deepseek-flash` / `deepseek-v4-pro`） | 新增 `scripts/list_models.py`；400 报错直接提示下一步 |
-| 模型自称"已有一条同名待办，建议清理" | `todo add` 的返回值把"新增成功"和**整张清单**一起回喂，模型误判重复 | 改成只回确认，需要清单时模型自己调 `action=list` |
-
-### 5.5 数字是怎么来的（我不信"优化好了"这句话）
-
-压缩效果要求同时给出四个数：`before/after token 数`、`触发层`、`是否调 LLM`、`工具配对是否完整`。缺一个就说明压缩可能把配对截断了，请求会 400。
-
-| 场景 | before | after | 层 | LLM 调用 | 配对 |
-|---|---|---|---|---|---|
-| budget=1500 | 33959（2263.9%） | 1338（89.2%） | L3 | 0 | 1/1 |
-| 反推 0.70 水位 | 33959（70.0%） | 7105（14.6%） | L1+L2 | 1 | 6/6 |
-
-### 5.6 哪些是 AI 做的，哪些是我做的
-
-| 环节 | 谁做 | 说明 |
-|---|---|---|
-| 题目解析、要求清单 | AI 提取，我核对 | "提交内容"归属哪一部分由我判断 |
-| 事实核查 | AI 查证，我判断 | 两处纠错是要求"区分事实与判断"后才暴露的 |
-| 接口契约 | 我定，AI 落文字 | 并行开发的正确性来源 |
-| 模块实现 | AI 写，我抽查 + 改 bug | 5 个 bug 全部由我定位并给出修复方向 |
-| 测试设计 | 我定覆盖面，AI 写用例 | "未知工具/缺参数/脏 JSON/配对/超时"必须有用例 |
-| 架构取舍 | 我拍板 | 3.9 节的 8 条决策 |
-| 架构题 | AI 查事实，我写判断 | 题面明确反对 AI 代写，所以答案是半成品 + 待拍板判断点 |
 
 ---
 
@@ -655,63 +551,10 @@ python -m unittest discover -s tests -t . -v      # 140 tests, 全部离线
 
 CI：[`.github/workflows/tests.yml`](.github/workflows/tests.yml)，Ubuntu + Windows × Python 3.11/3.12，另含"零依赖"与"全模块可导入"检查。
 
----
-
-## 七、模型配置与故障排查
-
-| 项 | 值 |
-|---|---|
-| base_url | `https://api.deepseek.com/v1`（可用 `LLM_BASE_URL` 覆盖为网关） |
-| 模型 | **因账号/网关而异**：官方文档是 `deepseek-chat` / `deepseek-reasoner`，本机 key 实测只有 `deepseek-flash` / `deepseek-v4-pro` |
-| key | `LLM_API_KEY` 或 `DEEPSEEK_API_KEY`，二选一 |
-| thinking 回填 | ❌ 不回填 `reasoning_content`（DeepSeek 推理模型不接受） |
-| tool_choice | 只发 `auto`（不依赖 required/strict） |
-
-```bash
-# .env
-LLM_API_KEY=sk-xxxxxxxx
-LLM_MODEL=deepseek-flash      # 用 scripts/list_models.py 确认
-```
-
-| 现象 | 原因 | 处理 |
-|---|---|---|
-| `400 Model Not Exist` | `LLM_MODEL` 不是该 key 支持的 ID | `python scripts/list_models.py`；错误信息里也会直接提示 |
-| `401 Authentication Fails` | key 错误或过期 | 检查 `.env` 的 `LLM_API_KEY`（不要留空格/引号） |
-| 启动就报"缺少 API key" | `.env` 没被读到 | 确认文件在仓库根目录且名为 `.env`；也支持 `DEEPSEEK_API_KEY` |
-| 检测到 `LLM_PROVIDER=xxx` 报错 | 旧配置残留 | 删掉该变量或设为 `deepseek` |
-
-设计上保留了一个**薄的 `ModelProfile` 能力画像**（`agent/config.py`）：有且只有 DeepSeek 一个实例，作用是让 builder/client 问"能不能回填思考"，而不是把厂商判断散落在业务代码里。将来接第二家模型的扩展点是继承 `Adapter`，主循环不用改。
 
 ---
 
-## 八、对照题目要求
-
-| 题目要求 | 实现 | 证据 |
-|---|---|---|
-| 不依赖 langgraph / openhands / openclaw | 纯标准库手写 `AgentRuntime` | `agent/runtime/loop.py`，依赖清单为空 |
-| 四步基本循环 | 单 `while` 循环 + `max_steps` 兜底 | 3.2 |
-| ≥3 工具，todo 必须 | **5 个**：calculator / search(mock) / **todo** / read_docs / weather | 3.3 |
-| 工具注册机制（名称/描述/参数 Schema） | `@tool` 从类型注解 + docstring 自动生成 JSON Schema | 3.3 |
-| LLM 基于 Schema 自主决策 | `tools=` 透传，主循环不含任何工具名 | 3.3 |
-| 解析思考 / 工具调用 / 最终答案 | `llm/parser.py` 归一化 + 脏输出三级修复 | 3.3 |
-| session 管理：窗口独立、可续聊 | 每 session 一个 JSONL，`/switch` 恢复 | 3.4 |
-| 最大轮次限制 | 单 run `max_steps=8`；session 累计 `max_turns=200` | `loop.py` |
-| 记住之前状态、支持追问 | 窗口 + 摘要 + 结构化状态常驻 + 按需召回 | 3.5 / 四 |
-| 哪些信息进 context（自行判断） | 白名单 / 黑名单表 | 3.5 |
-| context 过长基础压缩 | L0–L3 四层阶梯，失败可降级 | 3.5 |
-| 基本异常处理 | 13 类异常矩阵，工具失败回喂自愈 | 3.7 |
-| 工具调用 trace / 执行日志 | trace_id + span + JSONL 落盘 | 3.8 |
-| 测试用例构建 | 140 个用例（9 个模块） | 六 |
-| 真实 LLM API | DeepSeek，已真机联调 | 1.4 / 七 |
-| README：运行方式 | 一 | — |
-| README：目录结构 | 二 | — |
-| README：系统设计 | 三 | — |
-| README：memory 召回时机与放置方式 | 四 | — |
-| README：AI Prompt 与问题解决记录 | 五 | — |
-
----
-
-## 九、文档索引
+##  七、文档索引
 
 | 文档 | 内容 | 与 README 的关系 |
 |---|---|---|
