@@ -11,7 +11,7 @@ from pathlib import Path
 
 from .base import ToolResult, tool
 
-#: 仓库根目录：agent/tools/../../（即项目的 D:\AI\mini-agent）
+#: 仓库根目录：agent/tools/../..
 _REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 _DOCS_DIR = _REPO_ROOT / "docs"
 _ARTIFACTS_DIR = _REPO_ROOT / "artifacts"
