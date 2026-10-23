@@ -26,7 +26,14 @@
 - 无需 `pip install`；无需数据库；无需 Docker
 - 一个 DeepSeek API key（[platform.deepseek.com](https://platform.deepseek.com)）
 
-### 1.2 三步跑起来
+### 1.2 获取代码
+
+```bash
+git clone https://github.com/ozlyyds04/mini-agent.git
+cd mini-agent
+```
+
+### 1.3 三步跑起来
 
 ```bash
 # 1) 配置（唯一需要手动做的一步）
@@ -42,7 +49,7 @@ python -m unittest discover -s tests -t . -v
 ```
 
 
-### 1.5 CLI 命令与参数
+### 1.4 CLI 命令与参数
 
 | 命令 | 作用 |
 |---|---|
