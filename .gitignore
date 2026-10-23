@@ -1,12 +1,22 @@
-# ---- 密钥与本地配置 ----
+# ---- 密钥与本地配置（绝不提交）----
 .env
-.env.local
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
 
-# ---- 运行时产物 ----
+# ---- 运行时产物：真实会话 / trace / 归档，含对话原文 ----
 sessions/
 traces/
 artifacts/
 *.jsonl
+
+# ---- 本地数据库与日志 ----
+*.log
+*.sqlite
+*.sqlite3
+*.db
 
 # ---- Python ----
 __pycache__/
@@ -16,11 +26,15 @@ build/
 dist/
 .venv/
 venv/
+coverage.xml
+htmlcov/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
 
-# ---- 编辑器 ----
+# ---- 工具 / 编辑器 ----
+.dsh/
+.claude/
 .vscode/
 .idea/
 .DS_Store
